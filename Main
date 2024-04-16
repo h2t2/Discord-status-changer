@@ -1,0 +1,41 @@
+import requests
+import json
+import time
+
+STATUS_API_URL = "https://discord.com/api/v9/users/@me/settings"
+
+def change_status(token, new_status):
+    headers = {
+        "Authorization": token,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "custom_status": {
+            "text": new_status,
+            "emoji_id": None,
+            "emoji_name": None
+        }
+    }
+    response = requests.patch(STATUS_API_URL, headers=headers, data=json.dumps(payload))
+    if response.status_code == 200:
+        print("\033[92mSuccessfully changed status\033[0m")
+    else:
+        print("\033[91mFailed to change status. Please make sure you put in a real token!\033[0m")
+
+def main():
+    token = "YOUR USER TOKEN GOES HERE"
+    statuses = []
+    while True:
+        new_status = input("\033[95mEnter a new status: \033[0m")
+        statuses.append(new_status)
+        choice = input("\033[95mDo you want to add another status? (yes/no): \033[0m")
+        if choice.lower() != 'yes':
+            break
+
+    while True:
+        for status in statuses:
+            change_status(token, status)
+            time.sleep(0.5)
+
+if __name__ == "__main__":
+    main()
